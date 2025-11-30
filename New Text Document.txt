@@ -1,0 +1,72 @@
+To run the program
+Configure the Server (Computer A)
+This computer will act as the "Manager" and listen for connections.
+
+Find your IP Address:
+
+Open Command Prompt (cmd).
+
+Type ipconfig and press Enter.
+
+Look for IPv4 Address. It will look something like 192.168.1.5 (or 10.0.0.5).
+
+Write this number down.
+
+Check server.py code:
+
+Make sure the SERVER_IP line looks like this:
+
+
+SERVER_IP = '0.0.0.0'  # This tells it to accept connections from ANYWHERE
+(Note: Do not put the 192.168... IP here. 0.0.0.0 is safer for the server side).
+
+Run the Server:
+
+Run the script: python server.py
+
+Keep this window open. You should see: [STARTING] Server is listening...
+
+Step 2: Configure the Client (Computer B)
+This computer will act as the "Smart Device."
+
+Open client.py code:
+
+You need to tell this computer where the server is.
+
+Find the SERVER_IP line and change it to Computer A's IP address (the one you wrote down).
+
+Example:
+
+
+# Replace 'localhost' with Computer A's IP
+SERVER_IP = '192.168.1.5' 
+SERVER_PORT = 5050
+Run the Client:
+
+Run the script: python client.py
+Step 3: Verify the Connection
+Look at the screen of Computer A (Server).
+
+You should instantly see a message like:
+
+[NEW CONNECTION] Device connected from ('192.168.1.X', 54321) ✅ [INFO] Smart_AC_Unit_1: Status OK | Value: 24°C
+
+If you see this, you have successfully built a network application between two hosts!
+⚠️ IMPORTANT: If it fails (The Firewall Issue)
+If Computer B says "Connection Refused" or "Timed Out," it is almost always the Windows Firewall on Computer A blocking the connection.
+
+Quick fix for the Demo:
+
+On Computer A (Server), press the Windows Key and type "Firewall".
+
+Select "Windows Defender Firewall".
+
+Click "Turn Windows Defender Firewall on or off" (left side).
+
+Select "Turn off Windows Defender Firewall" for both private and public networks.
+
+Click OK.
+
+Try running the Client again. It should work immediately.
+
+(Remember to turn the Firewall back on after your Viva!)

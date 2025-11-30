@@ -1,0 +1,33 @@
+The Demo (4 Minutes)
+You have very little time. Do not read slides. Show the system working.
+
+Minute 0:00 - 0:30 (Intro):
+
+"My project is a Real-time Network Device Monitoring System for a Smart Office."
+
+"It allows a central server to monitor the health and status of multiple devices simultaneously using TCP sockets and multithreading."
+
+Minute 0:30 - 3:00 (Live Demo):
+
+Action: Run the Server code. Show the "Listening" message.
+
+Action: Start Client 1 (simulate an AC). Show the data popping up on the server.
+
+Action: Start Client 2 (Change the name in code to "Fire_Alarm").
+
+Key Moment: Explain the Alert. "As you can see, when the AC temperature exceeds 30 degrees, the server detects the 'CRITICAL' flag and triggers an alert log."
+
+Minute 3:00 - 4:00 (Tech Explanation):
+
+"I used Python's socket library for networking."
+
+"Crucially, I implemented threading. Every time a device connects, the server spawns a new thread. This prevents one slow device from blocking the others."
+
+Phase 6: Viva Questions (Be prepared!)
+Q: Where exactly are the threads used? A: "In the server.py file, line 58. I use threading.Thread(target=handle_device...). This creates a parallel process for that specific client connection."
+
+Q: What protocol are you using? A: "I am using TCP (Transmission Control Protocol) because it ensures reliable data delivery. If I used UDP, I might lose critical alert packets."
+
+Q: How do you handle data exchange? A: "I serialize the data into JSON format before sending it over the socket, then deserialize it back into a Python dictionary on the server."
+
+Q: Can this handle 100 devices? A: "Yes, because of the threading. However, with thousands of devices, I would switch to asyncio (asynchronous programming) to save CPU resources, but for a Smart Office, threading is perfect."
