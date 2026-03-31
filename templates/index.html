@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Advanced Network Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+          background-color:#020617;
+          background-image:
+            linear-gradient(rgba(30,41,59,0.3) 1px,transparent 1px),
+            linear-gradient(90deg,rgba(30,41,59,0.3) 1px,transparent 1px);
+          background-size:30px 30px;
+        }
+        .glass-panel{
+          background:rgba(15,23,42,0.75);
+          backdrop-filter:blur(12px);
+          border:1px solid rgba(51,65,85,0.5);
+          box-shadow:0 8px 32px rgba(0,0,0,0.37);
+        }
+        .packet{position:absolute;width:14px;height:14px;border-radius:50%;z-index:50;pointer-events:none;filter:blur(1px);}
+        .server-pulse{animation:pulse-ring 2s cubic-bezier(.215,.61,.355,1) infinite;}
+        @keyframes pulse-ring{0%{box-shadow:0 0 0 0 rgba(56,189,248,.7);}70%{box-shadow:0 0 0 25px rgba(56,189,248,0);}100%{box-shadow:0 0 0 0 rgba(56,189,248,0);}}
+        .data-line{animation:flow-line 30s linear infinite;}
+        @keyframes flow-line{to{stroke-dashoffset:-1000;}}
+        ::-webkit-scrollbar{width:6px}
+        ::-webkit-scrollbar-thumb{background:#334155;border-radius:10px}
+    </style>
+</head>
+<body class="text-slate-300 font-sans h-screen flex flex-col overflow-hidden">
+
+<header class="p-5 glass-panel z-20 flex justify-between items-center border-b border-slate-800">
+    <div class="flex items-center gap-4">
+        <div class="bg-sky-500/20 p-3 rounded-lg border border-sky-500/50">
+            <i class="fa-solid fa-satellite-dish text-2xl text-sky-400"></i>
+        </div>
+        <div>
+            <h1 class="text-2xl font-bold text-white">NOC Data Stream</h1>
+            <p class="text-xs text-slate-500 uppercase">Real-time TCP Socket Monitor</p>
+        </div>
+    </div>
+    <div class="flex gap-6">
+        <div class="text-center px-4 border-r border-slate-700">
+            <p class="text-xs text-slate-400 uppercase">Packets</p>
+            <p id="count-packets" class="text-2xl font-mono text-sky-400">0</p>
+        </div>
+        <div class="text-center px-4 border-r border-slate-700">
+            <p class="text-xs text-slate-400 uppercase">Nodes</p>
+            <p id="count-nodes" class="text-2xl font-mono text-emerald-400">0</p>
+        </div>
+        <div class="text-center px-4">
+            <p class="text-xs text-slate-400 uppercase">Alerts</p>
+            <p id="count-alerts" class="text-2xl font-mono text-rose-500">0</p>
+        </div>
+    </div>
+</header>
+
+<div class="flex-1 flex p-6 gap-6 overflow-hidden relative z-10">
+    <div class="flex-[2] glass-panel rounded-2xl flex flex-col relative overflow-hidden">
+        <div class="p-3 border-b border-slate-800 bg-slate-900/50">
+            <h2 class="text-sm text-slate-400 uppercase"><i class="fa-solid fa-sitemap mr-2"></i>Live Topology</h2>
+        </div>
+        <div id="canvas" class="flex-1 relative flex items-center justify-between p-6">
+            <svg id="svg-lines" class="absolute inset-0 w-full h-full pointer-events-none"></svg>
+            <div id="devices-container" class="grid grid-cols-2 gap-6 z-10 w-[520px] overflow-y-auto max-h-full pr-2"></div>
+            <div class="z-10 flex flex-col items-center mr-16" id="server-container">
+                <div id="server-node" class="w-32 h-32 bg-slate-800 rounded-full border-4 border-sky-500 flex items-center justify-center server-pulse">
+                    <i class="fa-solid fa-server text-5xl text-sky-400"></i>
+                </div>
+                <div class="mt-5 text-center bg-slate-900/80 p-3 rounded-lg border border-slate-700">
+                    <span class="font-mono text-sky-400 text-lg">TCP :5050</span>
+                    <p class="text-xs text-slate-400 uppercase">Main Controller</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="flex-[1] glass-panel rounded-2xl flex flex-col">
+        <div class="p-3 border-b border-slate-800 bg-slate-900/50">
+            <h2 class="text-sm text-slate-400 uppercase"><i class="fa-solid fa-terminal mr-2"></i>Packet Sniffer</h2>
+        </div>
+        <div id="terminal" class="flex-1 overflow-y-auto p-4 font-mono text-[11px] bg-black/60">
+            <div class="text-emerald-500">> Socket listener initialized...</div>
+        </div>
+    </div>
+</div>
+
+<script>
+    const socket = io();
+    const canvas=document.getElementById('canvas');
+    const serverNode=document.getElementById('server-node');
+    const svgLines=document.getElementById('svg-lines');
+    let stats={packets:0,nodes:0,alerts:0};
+    const activeDevices=new Set();
+
+    function updateMetrics(){
+      document.getElementById('count-packets').innerText=stats.packets;
+      document.getElementById('count-nodes').innerText=activeDevices.size;
+      document.getElementById('count-alerts').innerText=stats.alerts;
+    }
+
+    function drawConnectionLine(device){
+      const id='line-'+device.id;
+      let line=document.getElementById(id);
+      if(!line){
+        line=document.createElementNS("http://www.w3.org/2000/svg","line");
+        line.setAttribute("id",id);
+        line.setAttribute("stroke","rgba(56,189,248,0.45)");
+        line.setAttribute("stroke-width","3");
+        line.setAttribute("stroke-dasharray","8 6");
+        line.classList.add("data-line");
+        svgLines.appendChild(line);
+      }
+      const c=canvas.getBoundingClientRect();
+      const d=device.getBoundingClientRect();
+      const s=serverNode.getBoundingClientRect();
+      line.setAttribute("x1",d.right-c.left);
+      line.setAttribute("y1",d.top+d.height/2-c.top);
+      line.setAttribute("x2",s.left-c.left+15);
+      line.setAttribute("y2",s.top+s.height/2-c.top);
+    }
+
+    function animatePacket(device,isCritical){
+      const c=canvas.getBoundingClientRect();
+      const d=device.getBoundingClientRect();
+      const s=serverNode.getBoundingClientRect();
+      const startX=d.right-c.left;
+      const startY=d.top+d.height/2-c.top;
+      const endX=s.left+s.width/2-c.left;
+      const endY=s.top+s.height/2-c.top;
+      const packet=document.createElement('div');
+      packet.classList.add('packet');
+      packet.classList.add(isCritical?'bg-rose-500':'bg-sky-400');
+      canvas.appendChild(packet);
+      const anim=packet.animate([
+        {transform:`translate(${startX}px,${startY}px)`,opacity:1},
+        {transform:`translate(${endX}px,${endY}px)`,opacity:0}
+      ],{duration:500});
+      anim.onfinish=()=>packet.remove();
+    }
+
+    function getDeviceIcon(name){
+      const n=name.toLowerCase();
+      if(n.includes('ac')||n.includes('hvac')) return 'fa-snowflake text-sky-300';
+      if(n.includes('fan')) return 'fa-fan text-slate-300';
+      if(n.includes('temp')) return 'fa-temperature-half text-orange-400';
+      return 'fa-microchip text-emerald-400';
+    }
+
+    socket.on('new_packet', function(data){
+      const critical=data.status==="CRITICAL";
+      stats.packets++;
+      if(critical) stats.alerts++;
+      activeDevices.add(data.device_name);
+      updateMetrics();
+
+      const container=document.getElementById('devices-container');
+      const id='device-'+data.device_name.replace(/\s+/g,'-');
+      let card=document.getElementById(id);
+      const glow=critical?'border-rose-500':'border-sky-500/50';
+      const valueColor=critical?'text-rose-400':'text-emerald-400';
+      const icon=getDeviceIcon(data.device_name);
+
+      const html=`
+        <div class="flex items-center gap-3">
+          <div class="w-12 h-12 rounded-lg bg-slate-900 flex items-center justify-center">
+            <i class="fa-solid ${icon} text-xl"></i>
+          </div>
+          <div class="flex-1">
+            <h3 class="text-white font-bold">${data.device_name}</h3>
+            <p class="text-[10px] text-slate-400">${data.address}</p>
+          </div>
+        </div>
+        <div class="mt-3 bg-black/60 rounded p-2 flex justify-between">
+          <span class="text-xs text-slate-400">Payload</span>
+          <span class="font-mono ${valueColor}">${data.value}</span>
+        </div>
+      `;
+      if(card){
+        card.innerHTML=html;
+        card.className=`glass-panel border-l-4 p-3 rounded-xl ${glow}`;
+      } else {
+        card=document.createElement('div');
+        card.id=id;
+        card.className=`glass-panel border-l-4 p-3 rounded-xl ${glow}`;
+        card.innerHTML=html;
+        container.appendChild(card);
+      }
+
+      drawConnectionLine(card);
+      animatePacket(card,critical);
+
+      // --- PACKET LOG ---
+      const terminal = document.getElementById("terminal");
+      const logEntry = document.createElement("div");
+      const time = new Date().toISOString().split("T")[1].slice(0, -1);
+      logEntry.innerHTML = `<span class="text-slate-600">[${time}]</span>
+        <span class="text-sky-400">${data.device_name}</span>
+        <span class="text-slate-500">::</span>
+        <span class="${critical ? 'text-rose-400 font-bold' : 'text-slate-300'}">
+          ${data.raw_payload || JSON.stringify(data)}
+        </span>`;
+      terminal.appendChild(logEntry);
+      if (terminal.children.length > 80) terminal.removeChild(terminal.children[1]);
+      terminal.scrollTop = terminal.scrollHeight;
+    });
+
+    window.addEventListener('resize',()=>{document.querySelectorAll('[id^="device-"]').forEach(drawConnectionLine)});
+</script>
+</body>
+</html>

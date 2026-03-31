@@ -1,50 +1,78 @@
 import socket
-import time
 import json
-import random
+import threading
+import sys
 
-# --- CONFIGURATION ---
-# REPLACE THIS with the IP address of the computer running server.py
-# If testing on ONE computer, use 'localhost'.
-# If using TWO computers, find the Server's IP (e.g., '192.168.1.5')
+# IMPORTANT: To communicate between two hosts, change 'localhost' to the Server's actual IP!
 SERVER_IP = 'localhost'
 SERVER_PORT = 5050
+DEVICE_NAME = "Interactive_Terminal_1"
 
-# Device Configuration (Change these for different clients)
-DEVICE_NAME = "Smart_AC_Unit_1"
+def receive_messages(client):
+    """Threading Requirement: Listens for server replies while you type"""
+    while True:
+        try:
+            msg = client.recv(1024).decode('utf-8')
+            if not msg:
+                break
 
-def start_device():
+            # Parse server reply and print it above the input prompt
+            reply = json.loads(msg.strip())
+            print(f"\n[SERVER ACK]: {reply.get('server_msg')}")
+            print("Enter value to send (or 'quit'): ", end="")
+            sys.stdout.flush()
+        except:
+            print("\n[DISCONNECTED] Server closed the connection.")
+            break
+
+def start_interactive_client():
     client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 
     try:
         client.connect((SERVER_IP, SERVER_PORT))
-        print(f"[CONNECTED] {DEVICE_NAME} connected to server.")
-    except:
-        print("[ERROR] Could not connect to server. Is it running?")
+        print(f"[CONNECTED] Connected to Server at {SERVER_IP}:{SERVER_PORT}")
+    except Exception as e:
+        print(f"[ERROR] Could not connect to server: {e}")
         return
 
+    # Start the background thread to listen for server replies
+    recv_thread = threading.Thread(target=receive_messages, args=(client,), daemon=True)
+    recv_thread.start()
+
+    print("\n" + "="*40)
+    print(f" DEVICE CONTROL: {DEVICE_NAME}")
+    print("="*40)
+    print("Type a value (e.g., '45C', 'System Overheat') to send it to the dashboard.")
+    print("Tip: Include the word 'crit' or 'alert' in your message to trigger a red alert on the dashboard.\n")
+
     while True:
-        # Simulate sensor data
-        temp = random.randint(20, 35)
+        # Chatbot-style input
+        user_input = input("Enter value to send (or 'quit'): ")
 
-        # Simulate status logic
-        status = "OK"
-        if temp > 30:
-            status = "CRITICAL" # This triggers the alert on the server
+        if user_input.lower() == 'quit':
+            break
 
-        # Create message packet
+        # Determine status automatically based on what you typed
+        if "crit" in user_input.lower() or "alert" in user_input.lower() or "high" in user_input.lower():
+            status = "CRITICAL"
+        else:
+            status = "OK"
+
         data = {
             "device_name": DEVICE_NAME,
             "status": status,
-            "value": f"{temp}°C"
+            "value": user_input
         }
 
-        # Send data
-        json_data = json.dumps(data)
-        client.send(json_data.encode('utf-8'))
+        json_data = json.dumps(data) + "\n"
 
-        # Wait 2 seconds before sending next update (Real-time simulation)
-        time.sleep(2)
+        try:
+            client.send(json_data.encode('utf-8'))
+        except Exception as e:
+            print(f"[DISCONNECTED] Lost connection: {e}")
+            break
+
+    client.close()
 
 if __name__ == "__main__":
-    start_device()
+    start_interactive_client()
